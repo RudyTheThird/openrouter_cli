@@ -1,4 +1,3 @@
-
 import requests
 import time
 import argparse
@@ -13,6 +12,7 @@ API_KEY = os.getenv("OPENROUTER_API_KEY")  # Store your API key in an environmen
 MODELS = {
     "gpt-4": {"name": "openai/gpt-4", "cost_per_1k_tokens": 0.03},
     "claude-3": {"name": "anthropic/claude-3", "cost_per_1k_tokens": 0.015},
+    "claude-3.5-haiku": {"name": "anthropic/claude-3.5-haiku", "cost_per_1k_tokens": 0.000004}
 }
 
 # Rate limiting
@@ -38,31 +38,65 @@ def chat_completion(model, user_input):
         token_usage = data.get('usage', {}).get('total_tokens', 0)
         cost = (token_usage / 1000) * MODELS.get(model, {}).get('cost_per_1k_tokens', 0)
         
-        print(f"Response:\n{content}")
-        print(f"Tokens used: {token_usage}, Estimated Cost: ${cost:.4f}")
+        print(f"\nResponse:\n{content}")
+        print(f"\nTokens used: {token_usage}, Estimated Cost: ${cost:.4f}")
         
     except requests.exceptions.RequestException as e:
         print(f"Error during chat completion: {e}")
+    except KeyError as e:
+        print(f"Unexpected response structure: {e}")
+    
+    time.sleep(RATE_LIMIT_WAIT)
+
+
+def embedding(model, text):
+    """Interact with the embedding endpoint."""
+    url = f"{OPENROUTER_API_URL}/embeddings"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": model,
+        "input": text
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        embedding_vector = data['data'][0]['embedding']
+        token_usage = data.get('usage', {}).get('total_tokens', 0)
+        cost = (token_usage / 1000) * MODELS.get(model, {}).get('cost_per_1k_tokens', 0)
+        
+        print(f"\nEmbedding Vector (first 5 dimensions): {embedding_vector[:5]}")
+        print(f"\nTokens used: {token_usage}, Estimated Cost: ${cost:.4f}")
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error during embedding: {e}")
+    except KeyError as e:
+        print(f"Unexpected response structure: {e}")
     
     time.sleep(RATE_LIMIT_WAIT)
 
 
 def main():
     parser = argparse.ArgumentParser(description="OpenRouter API CLI Interface")
-    parser.add_argument('--mode', choices=['chat'], required=True, help="Select API mode: chat")
+    parser.add_argument('--mode', choices=['chat', 'embedding'], required=True, help="Select API mode: chat or embedding")
     parser.add_argument('--model', choices=MODELS.keys(), required=True, help="Choose the LLM model")
-    parser.add_argument('--input', type=str, required=True, help="User input")
+    parser.add_argument('--input', type=str, required=True, help="User input for chat or embedding")
 
     args = parser.parse_args()
 
     if not API_KEY:
-        print("Error: OPENROUTER_API_KEY is not set.")
+        print("Error: OPENROUTER_API_KEY is not set. Please set it as an environment variable.")
         return
 
     model_name = MODELS[args.model]['name']
 
     if args.mode == 'chat':
         chat_completion(model_name, args.input)
+    elif args.mode == 'embedding':
+        embedding(model_name, args.input)
 
 
 if __name__ == "__main__":
